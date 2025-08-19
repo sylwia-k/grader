@@ -57,6 +57,10 @@ interface StudentFile {
   file: File;
   studentId: string;
   group?: string;
+  recognizedName?: string;
+  recognizedSurname?: string;
+  recognizedJournal?: string;
+  ocrWarning?: string;
 }
 
 const AIAssistedGrading = () => {
@@ -222,8 +226,35 @@ const AIAssistedGrading = () => {
           }
 
           Promise.all(fileReaders)
-            .then(() => {
-              setTestScans((prev) => [...prev, ...newStudentFiles]);
+            .then(async () => {
+              // After basic load, perform OCR for header fields for each file
+              const withOCR = await Promise.all(
+                newStudentFiles.map(async (studentFile) => {
+                  try {
+                    const formData = new FormData();
+                    formData.append("file", studentFile.file);
+                    const resp = await fetch("/api/ocr/header", {
+                      method: "POST",
+                      body: formData,
+                    });
+                    if (resp.ok) {
+                      const data = await resp.json();
+                      return {
+                        ...studentFile,
+                        recognizedName: data.name || undefined,
+                        recognizedSurname: data.surname || undefined,
+                        recognizedJournal: data.journalNumber || undefined,
+                        ocrWarning: data.warning || undefined,
+                      } as StudentFile;
+                    }
+                    return studentFile;
+                  } catch (e) {
+                    return studentFile;
+                  }
+                }),
+              );
+
+              setTestScans((prev) => [...prev, ...withOCR]);
               toast({
                 title: "Skany testów załadowane",
                 description: `Pomyślnie załadowano ${files.length} plików`,
@@ -371,18 +402,19 @@ const AIAssistedGrading = () => {
         const journalMatch = fileBaseName.match(/(\d+)/);
         const journalNumber = journalMatch ? journalMatch[1] : String(i + 1);
         student = {
-          name: "[OCR]",
-          surname: `Uczeń nr ${journalNumber}`,
-          journalNumber: journalNumber,
+          name: studentFile.recognizedName || "[OCR]",
+          surname: studentFile.recognizedSurname || `Uczeń nr ${journalNumber}`,
+          journalNumber: studentFile.recognizedJournal || journalNumber,
         };
       } else if (studentIdentifierType === "name") {
         // Try to extract name from filename
         const cleanName = fileBaseName.replace(/[_-]/g, " ").trim();
         const nameParts = cleanName.split(" ");
         student = {
-          name: nameParts[0] || `Uczeń${i + 1}`,
-          surname: nameParts[1] || `Nazwisko${i + 1}`,
-          journalNumber: String(i + 1),
+          name: studentFile.recognizedName || nameParts[0] || `Uczeń${i + 1}`,
+          surname:
+            studentFile.recognizedSurname || nameParts[1] || `Nazwisko${i + 1}`,
+          journalNumber: studentFile.recognizedJournal || String(i + 1),
         };
       } else {
         // Both name and journal number
@@ -397,9 +429,10 @@ const AIAssistedGrading = () => {
           .filter((part) => part.length > 0);
 
         student = {
-          name: nameParts[0] || `Uczeń${i + 1}`,
-          surname: nameParts[1] || `Nazwisko${i + 1}`,
-          journalNumber: journalNumber,
+          name: studentFile.recognizedName || nameParts[0] || `Uczeń${i + 1}`,
+          surname:
+            studentFile.recognizedSurname || nameParts[1] || `Nazwisko${i + 1}`,
+          journalNumber: studentFile.recognizedJournal || journalNumber,
         };
       }
 
