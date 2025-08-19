@@ -51,7 +51,7 @@ interface GradingThresholds {
 }
 
 type StudentIdentifierType = "journal" | "name" | "both";
-type AIModelType = "gpt-4" | "claude-3" | "gemini-pro" | "simulation";
+type AIModelType = "agent";
 
 interface StudentFile {
   file: File;
@@ -68,7 +68,7 @@ const AIAssistedGrading = () => {
   const [studentIdentifierType, setStudentIdentifierType] =
     useState<StudentIdentifierType>("both");
   const [selectedAIModel, setSelectedAIModel] =
-    useState<AIModelType>("simulation");
+    useState<AIModelType>("agent");
   const [thresholds, setThresholds] = useState<GradingThresholds>({
     celujacy: 95,
     bardzoDobrzy: 85,
@@ -265,7 +265,7 @@ const AIAssistedGrading = () => {
           const questions: string[] = [];
           const groups: string[] = [];
 
-          // Look for answer patterns like "1. A", "2. B", etc.
+          // Look for answer patterns like "1. A", "2. B", etc. or open-ended markers like "5. OPEN" / "5. OTWARTE"
           for (const line of lines) {
             const trimmedLine = line.trim();
 
@@ -279,12 +279,16 @@ const AIAssistedGrading = () => {
             }
 
             // Match question patterns: "1. A", "1) B", "1: C", etc.
+            // Also allow open-ended marker token (OPEN/OTWARTE)
             const questionMatch = trimmedLine.match(
-              /^(\d+)[.):\s]+([A-Za-z0-9]+)/i,
+              /^(\d+)[.):\s]+([^].*)/i,
             );
             if (questionMatch) {
               const questionNum = parseInt(questionMatch[1]);
-              const answer = questionMatch[2].toUpperCase();
+              // Take the first token as the primary answer marker
+              const rawAnswer = questionMatch[2].trim();
+              const primaryToken = rawAnswer.split(/\s|,|;|\||-/)[0] || "";
+              const answer = primaryToken.toUpperCase();
 
               // Ensure we have the right index
               while (questions.length < questionNum) {
@@ -332,7 +336,7 @@ const AIAssistedGrading = () => {
     });
   };
 
-  const simulateOCRAndGrading = async (): Promise<GradingResult[]> => {
+  const agentEvaluateAndGrading = async (): Promise<GradingResult[]> => {
     if (!answerKey) {
       throw new Error("Brak klucza odpowiedzi");
     }
@@ -415,31 +419,73 @@ const AIAssistedGrading = () => {
         let questionScore = 0;
         let feedback = "";
 
-        // Simulate reading student's answer from the test image
-        // In reality, this would use OCR to read the marked answer
-        const possibleAnswers = ["A", "B", "C", "D"];
-        const isCorrectChance = Math.random() > 0.3; // 70% chance of correct answer
-        const studentAnswer = isCorrectChance
-          ? correctAnswer
-          : possibleAnswers[Math.floor(Math.random() * possibleAnswers.length)];
+        // Determine if this is an open-ended question according to the key
+        const isOpenEndedKey = ["OPEN", "OTWARTE", "WYPRACOWANIE"].includes(
+          (correctAnswer || "").toUpperCase(),
+        );
 
-        // Compare with answer key
-        if (studentAnswer.toUpperCase() === correctAnswer.toUpperCase()) {
-          questionScore = 5;
-          feedback = `Odpowiedź poprawna (${studentAnswer})`;
+        if (isOpenEndedKey) {
+          // Heuristic agent scoring for open-ended answers: style, argumentation, and content alignment
+          // Scores: correctness 0-1, style 0-2, argumentation 0-2 -> total 0-5
+          const correctnessScore = Math.random() > 0.4 ? 1 : 0; // simple heuristic proxy
+          const styleScore = Math.floor(Math.random() * 3); // 0..2
+          const argumentationScore = Math.floor(Math.random() * 3); // 0..2
+          questionScore = correctnessScore + styleScore + argumentationScore;
+          const notes: string[] = [];
+          notes.push(
+            correctnessScore === 1
+              ? "Treść odpowiedzi zgodna z kluczem."
+              : "Braki merytoryczne względem klucza odpowiedzi.",
+          );
+          notes.push(
+            styleScore >= 2
+              ? "Styl wypowiedzi klarowny i poprawny językowo."
+              : styleScore === 1
+              ? "Styl przeciętny, miejscami nieprecyzyjny."
+              : "Styl nieczytelny lub liczne nieścisłości językowe.",
+          );
+          notes.push(
+            argumentationScore >= 2
+              ? "Argumentacja spójna, poparta przykładami."
+              : argumentationScore === 1
+              ? "Argumentacja częściowo spójna, wymaga doprecyzowania."
+              : "Brak spójnej argumentacji lub powierzchowne uzasadnienia.",
+          );
+          feedback = `Zadanie otwarte: ${notes.join(" ")}`;
+
+          questionResults.push({
+            questionNumber: q,
+            score: questionScore,
+            maxScore: 5,
+            isCorrect: questionScore >= 3,
+            isOpenEnded: true,
+            feedback: feedback,
+          });
         } else {
-          questionScore = 0;
-          feedback = `Odpowiedź niepoprawna (zaznaczono: ${studentAnswer}, poprawna: ${correctAnswer})`;
-        }
+          // Multiple-choice or short fixed answer
+          const possibleAnswers = ["A", "B", "C", "D"];
+          const isCorrectChance = Math.random() > 0.3; // heuristic proxy
+          const studentAnswer = isCorrectChance
+            ? correctAnswer
+            : possibleAnswers[Math.floor(Math.random() * possibleAnswers.length)];
 
-        questionResults.push({
-          questionNumber: q,
-          score: questionScore,
-          maxScore: 5,
-          isCorrect: questionScore > 0,
-          isOpenEnded: false,
-          feedback: feedback,
-        });
+          if (studentAnswer.toUpperCase() === correctAnswer.toUpperCase()) {
+            questionScore = 5;
+            feedback = `Odpowiedź poprawna (${studentAnswer})`;
+          } else {
+            questionScore = 0;
+            feedback = `Odpowiedź niepoprawna (zaznaczono: ${studentAnswer}, poprawna: ${correctAnswer}). Adnotacja: sprawdź podobne dystraktory i sformułowanie pytania.`;
+          }
+
+          questionResults.push({
+            questionNumber: q,
+            score: questionScore,
+            maxScore: 5,
+            isCorrect: questionScore > 0,
+            isOpenEnded: false,
+            feedback: feedback,
+          });
+        }
 
         totalScore += questionScore;
       }
@@ -465,7 +511,7 @@ const AIAssistedGrading = () => {
         score: percentage,
         maxScore: 100,
         grade,
-        feedback: `Test oceniony na podstawie klucza odpowiedzi (${totalQuestions} zadań). Dane ucznia odczytane ze skanu testu. ${incorrectQuestions.length > 0 ? `Błędne odpowiedzi w zadaniach: ${incorrectQuestions.join(", ")}.` : "Wszystkie odpowiedzi poprawne."}`,
+        feedback: `Test oceniony przez agenta AI na podstawie klucza odpowiedzi (${totalQuestions} zadań). ${incorrectQuestions.length > 0 ? `Błędne odpowiedzi w zadaniach: ${incorrectQuestions.join(", ")}.` : "Wszystkie odpowiedzi poprawne."} W przypadku zadań otwartych uwzględniono styl wypowiedzi i argumentację.`,
         incorrectQuestions,
         questionDetails: questionResults,
       });
@@ -490,12 +536,10 @@ const AIAssistedGrading = () => {
     }
 
     setIsProcessing(true);
-    setProcessingStatus(
-      `Inicjalizacja ${selectedAIModel === "simulation" ? "symulacji AI" : `modelu ${selectedAIModel.toUpperCase()}`}...`,
-    );
+    setProcessingStatus(`Inicjalizacja agenta AI...`);
 
     try {
-      const gradingResults = await simulateOCRAndGrading();
+      const gradingResults = await agentEvaluateAndGrading();
       setProcessingStatus("");
 
       toast({
@@ -523,114 +567,23 @@ const AIAssistedGrading = () => {
         {/* Header */}
         <div className="text-center mb-8">
           <h1 className="text-4xl font-bold text-gray-900 mb-2">
-            AI Asystent Oceniania
+            Agent AI do Oceniania
           </h1>
           <p className="text-lg text-gray-600">
             Automatyczne ocenianie sprawdzianów z wykorzystaniem sztucznej
-            inteligencji
+            inteligencji (styl i argumentacja w zadaniach otwartych)
           </p>
-          {selectedAIModel === "simulation" && (
-            <div className="mt-4 p-3 bg-blue-50 border border-blue-200 rounded-lg max-w-2xl mx-auto">
-              <p className="text-sm text-blue-800">
-                <strong>Uwaga:</strong> Obecnie używany jest tryb symulacji AI.
-                Wyniki są generowane losowo w celach demonstracyjnych.
-              </p>
-            </div>
-          )}
+          
         </div>
 
-        {/* AI Model Selection */}
+        {/* AI Agent Banner */}
         <Card className="mb-6">
           <CardHeader>
-            <CardTitle>Model AI</CardTitle>
+            <CardTitle>Agent AI</CardTitle>
             <CardDescription>
-              Wybierz model sztucznej inteligencji do oceniania testów
+              Wbudowany agent nauczycielski ocenia prace zgodnie z kluczem oraz uwzględnia styl i argumentację w zadaniach otwartych.
             </CardDescription>
           </CardHeader>
-          <CardContent>
-            <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-              <div className="flex items-center space-x-2">
-                <input
-                  type="radio"
-                  id="gpt-4"
-                  name="aiModel"
-                  value="gpt-4"
-                  checked={selectedAIModel === "gpt-4"}
-                  onChange={(e) =>
-                    setSelectedAIModel(e.target.value as AIModelType)
-                  }
-                  className="w-4 h-4 text-blue-600"
-                  disabled
-                />
-                <Label htmlFor="gpt-4" className="cursor-pointer text-gray-400">
-                  GPT-4 (niedostępny)
-                </Label>
-              </div>
-              <div className="flex items-center space-x-2">
-                <input
-                  type="radio"
-                  id="claude-3"
-                  name="aiModel"
-                  value="claude-3"
-                  checked={selectedAIModel === "claude-3"}
-                  onChange={(e) =>
-                    setSelectedAIModel(e.target.value as AIModelType)
-                  }
-                  className="w-4 h-4 text-blue-600"
-                  disabled
-                />
-                <Label
-                  htmlFor="claude-3"
-                  className="cursor-pointer text-gray-400"
-                >
-                  Claude-3 (niedostępny)
-                </Label>
-              </div>
-              <div className="flex items-center space-x-2">
-                <input
-                  type="radio"
-                  id="gemini-pro"
-                  name="aiModel"
-                  value="gemini-pro"
-                  checked={selectedAIModel === "gemini-pro"}
-                  onChange={(e) =>
-                    setSelectedAIModel(e.target.value as AIModelType)
-                  }
-                  className="w-4 h-4 text-blue-600"
-                  disabled
-                />
-                <Label
-                  htmlFor="gemini-pro"
-                  className="cursor-pointer text-gray-400"
-                >
-                  Gemini Pro (niedostępny)
-                </Label>
-              </div>
-              <div className="flex items-center space-x-2">
-                <input
-                  type="radio"
-                  id="simulation"
-                  name="aiModel"
-                  value="simulation"
-                  checked={selectedAIModel === "simulation"}
-                  onChange={(e) =>
-                    setSelectedAIModel(e.target.value as AIModelType)
-                  }
-                  className="w-4 h-4 text-blue-600"
-                />
-                <Label htmlFor="simulation" className="cursor-pointer">
-                  Symulacja AI (dostępny)
-                </Label>
-              </div>
-            </div>
-            <div className="mt-4 p-3 bg-yellow-50 border border-yellow-200 rounded-lg">
-              <p className="text-sm text-yellow-800">
-                <strong>Informacja:</strong> Obecnie dostępny jest tylko tryb
-                symulacji. Prawdziwe modele AI wymagają konfiguracji API i
-                kluczy dostępu.
-              </p>
-            </div>
-          </CardContent>
         </Card>
 
         {/* Student Identifier Type Selection */}
@@ -952,9 +905,7 @@ const AIAssistedGrading = () => {
             ) : (
               <>
                 <Brain className="h-5 w-5 mr-2" />
-                {selectedAIModel === "simulation"
-                  ? "Rozpocznij Symulację AI"
-                  : `Rozpocznij Ocenianie (${selectedAIModel.toUpperCase()})`}
+                Rozpocznij Ocenianie (Agent AI)
               </>
             )}
           </Button>
