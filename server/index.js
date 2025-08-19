@@ -99,6 +99,36 @@ app.post("/api/ocr/header", upload.single("file"), async (req, res) => {
     const { name, surname, journalNumber, warning } = extractHeaderFields(fullText);
     const ocrConfidence = result?.fullTextAnnotation?.pages?.[0]?.confidence ?? null;
 
+    // Best-effort detection of question indices and crossed-out marks from OCR text
+    const detectedQuestionsSet = new Set();
+    const crossedOutSet = new Set();
+    const rawLines = fullText.split(/\r?\n/);
+    for (const line of rawLines) {
+      const t = line.trim();
+      const m = t.match(/^(\d{1,3})[).:\-\s]+/);
+      if (m) {
+        const q = parseInt(m[1]);
+        if (!Number.isNaN(q)) detectedQuestionsSet.add(q);
+      }
+      const m1 = t.match(/^\s*[Xx]\s*(\d{1,3})\b/);
+      if (m1) {
+        const q = parseInt(m1[1]);
+        if (!Number.isNaN(q)) crossedOutSet.add(q);
+      }
+      const m2 = t.match(/^\s*(\d{1,3})\s*[).:\-]*\s*[Xx]\s*$/);
+      if (m2) {
+        const q = parseInt(m2[1]);
+        if (!Number.isNaN(q)) crossedOutSet.add(q);
+      }
+      const m3 = t.match(/(zad(?:anie)?|nr)?\s*(\d{1,3}).{0,15}(skre|przekre)/i);
+      if (m3) {
+        const q = parseInt(m3[2]);
+        if (!Number.isNaN(q)) crossedOutSet.add(q);
+      }
+    }
+    const detectedQuestions = Array.from(detectedQuestionsSet).sort((a, b) => a - b);
+    const crossedOutQuestions = Array.from(crossedOutSet).sort((a, b) => a - b);
+
     return res.json({
       name,
       surname,
@@ -106,6 +136,8 @@ app.post("/api/ocr/header", upload.single("file"), async (req, res) => {
       fullText,
       confidence: ocrConfidence,
       warning,
+      detectedQuestions,
+      crossedOutQuestions,
     });
   } catch (e) {
     console.error(e);
@@ -149,4 +181,3 @@ const port = process.env.PORT || 8787;
 app.listen(port, () => {
   console.log(`API server listening on :${port}`);
 });
-
