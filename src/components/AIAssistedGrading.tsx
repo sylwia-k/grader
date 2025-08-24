@@ -170,24 +170,7 @@ const AIAssistedGrading = () => {
     }
   };
 
-  const LOCAL_KEY = "ai_grading_name_map_v1";
-  const tryLoadLocalNameMap = async (pass: string) => {
-    try {
-      const blob = localStorage.getItem(LOCAL_KEY);
-      if (!blob) { setJournalToName({}); setNameMapUnlocked(true); return; }
-      const data = await decryptJsonWithPassphrase<Record<string, { name: string; surname: string }>>(blob, pass);
-      setJournalToName(data || {});
-      setNameMapUnlocked(true);
-    } catch {
-      setNameMapUnlocked(false);
-      throw new Error("Nieprawidłowe hasło lub uszkodzony plik mapy.");
-    }
-  };
-
-  const saveLocalNameMap = async (pass: string) => {
-    const blob = await encryptJsonWithPassphrase(journalToName, pass);
-    localStorage.setItem(LOCAL_KEY, blob);
-  };
+  // Usunięto lokalną mapę nazw i powiązane funkcje
 
   const extractStudentIdentifier = (filename: string): string => {
     const nameWithoutExt = filename.replace(/\.[^/.]+$/, "");
