@@ -1,6 +1,8 @@
 import express from "express";
 import cors from "cors";
 import multer from "multer";
+import Papa from "papaparse";
+import pdfParse from "pdf-parse";
 import visionPkg from "@google-cloud/vision";
 const { v2: vision } = visionPkg;
 import OpenAI from "openai";
@@ -174,6 +176,80 @@ app.post("/api/llm/score-open", async (req, res) => {
   } catch (e) {
     console.error(e);
     return res.status(500).json({ error: "Błąd oceny LLM.", details: String(e?.message || e) });
+  }
+});
+
+// Import results: accepts CSV or PDF. CSV headers: Imię,Nazwisko,Numer z dziennika,Punkty,Maksymalne punkty,Ocena,Procent,Błędne zadania
+app.post("/api/import/results", upload.single("file"), async (req, res) => {
+  try {
+    if (!req.file) return res.status(400).json({ error: "Brak pliku." });
+    const mime = req.file.mimetype || "";
+    let text = "";
+    if (mime.includes("csv") || mime.includes("text")) {
+      text = req.file.buffer.toString("utf-8");
+    } else if (mime.includes("pdf")) {
+      const parsed = await pdfParse(req.file.buffer);
+      text = parsed.text || "";
+    } else {
+      return res.status(400).json({ error: "Nieobsługiwany format. Użyj CSV lub PDF." });
+    }
+
+    if (!text.trim()) return res.status(400).json({ error: "Pusty plik." });
+
+    // Try CSV first
+    let rows = [];
+    try {
+      const parsed = Papa.parse(text, { header: true, skipEmptyLines: true });
+      if (parsed?.data && parsed.data.length > 0) rows = parsed.data;
+    } catch {}
+
+    // If not CSV, attempt to parse simple PDF table-like text (semicolon separated heuristic)
+    if (rows.length === 0) {
+      const lines = text.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
+      for (const line of lines) {
+        // Attempt: Imię;Nazwisko;Nr;Punkty;Max;Ocena;Procent;Błędne
+        const parts = line.split(/;|,|\t/).map(s => s.trim());
+        if (parts.length >= 6 && !/imi[eę]|nazwisko/i.test(parts[0])) {
+          rows.push({
+            "Imię": parts[0],
+            "Nazwisko": parts[1],
+            "Numer z dziennika": parts[2],
+            "Punkty": parts[3],
+            "Maksymalne punkty": parts[4],
+            "Ocena": parts[5],
+            "Procent": parts[6] || "",
+            "Błędne zadania": parts[7] || "",
+          });
+        }
+      }
+    }
+
+    if (rows.length === 0) return res.status(400).json({ error: "Nie udało się odczytać danych z pliku." });
+
+    const results = rows.map((r) => {
+      const incorrect = String(r["Błędne zadania"] || "")
+        .split(/[,;\s]+/)
+        .map((x) => parseInt(x))
+        .filter((n) => !Number.isNaN(n));
+      const score = parseFloat(String(r["Punkty"] || 0));
+      const maxScore = parseFloat(String(r["Maksymalne punkty"] || r["Max"] || 0));
+      const journalNumber = String(r["Numer z dziennika"] || r["Nr"] || "").match(/\d{1,3}/)?.[0] || "";
+      return {
+        studentName: String(r["Imię"] || r["Imie"] || ""),
+        studentSurname: String(r["Nazwisko"] || ""),
+        journalNumber,
+        score: Number.isFinite(score) ? score : 0,
+        maxScore: Number.isFinite(maxScore) ? maxScore : 0,
+        grade: String(r["Ocena"] || ""),
+        feedback: "",
+        incorrectQuestions: incorrect,
+      };
+    });
+
+    return res.json({ results });
+  } catch (e) {
+    console.error(e);
+    return res.status(500).json({ error: "Błąd importu.", details: String(e?.message || e) });
   }
 });
 

@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { useLocation, useNavigate } from "react-router-dom";
+import { Link, useLocation, useNavigate } from "react-router-dom";
 import {
   Card,
   CardContent,
@@ -40,7 +40,8 @@ interface GradingResult {
 const ResultsPage = () => {
   const location = useLocation();
   const navigate = useNavigate();
-  const results: GradingResult[] = location.state?.results || [];
+  const initialResults: GradingResult[] = location.state?.results || [];
+  const [results, setResults] = useState<GradingResult[]>(initialResults);
   const [selectedResult, setSelectedResult] = useState<GradingResult | null>(
     null,
   );
@@ -75,6 +76,23 @@ const ResultsPage = () => {
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
+  };
+
+  const importResults = async (file: File) => {
+    try {
+      const formData = new FormData();
+      formData.append("file", file);
+      const resp = await fetch("/api/import/results", { method: "POST", body: formData });
+      if (!resp.ok) {
+        const data = await resp.json().catch(() => ({}));
+        throw new Error(data?.error || "Błąd importu wyników.");
+      }
+      const data = await resp.json();
+      if (!Array.isArray(data?.results)) throw new Error("Nieprawidłowy format danych importu.");
+      setResults(data.results as GradingResult[]);
+    } catch (e: any) {
+      alert(e?.message || "Błąd importu wyników.");
+    }
   };
 
   if (results.length === 0) {
@@ -132,11 +150,20 @@ const ResultsPage = () => {
             <p className="text-lg text-gray-600">
               Szczegółowe wyniki dla {results.length} uczniów
             </p>
+            <div className="mt-2 text-sm text-yellow-900 bg-yellow-50 border border-yellow-200 rounded p-2">
+              AI generuje propozycję oceny, decyzję ostateczną podejmuje nauczyciel. <Link to="/regulamin" className="text-blue-700 hover:underline">Czytaj regulamin</Link>.
+            </div>
           </div>
-          <Button onClick={exportResults} className="flex items-center gap-2">
-            <Download className="h-4 w-4" />
-            Eksportuj CSV
-          </Button>
+          <div className="flex items-center gap-2">
+            <Button onClick={exportResults} className="flex items-center gap-2">
+              <Download className="h-4 w-4" />
+              Eksportuj CSV
+            </Button>
+            <label className="inline-flex items-center gap-2 text-sm cursor-pointer bg-white border rounded px-3 py-2 hover:bg-gray-50">
+              <input type="file" accept=".csv,.pdf" className="hidden" onChange={(e) => { const f = e.target.files?.[0]; if (f) importResults(f); e.currentTarget.value = ""; }} />
+              <span>Importuj CSV/PDF</span>
+            </label>
+          </div>
         </div>
 
         {/* Statistics */}
