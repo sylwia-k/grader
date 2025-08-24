@@ -34,6 +34,17 @@ const Regulations = () => {
             <p className="text-gray-800">
               Identyfikacja uczniów w systemie odbywa się wyłącznie na podstawie numeru z dziennika. Imię i nazwisko mogą być wyświetlane pomocniczo, lecz nie są wykorzystywane do identyfikacji.
             </p>
+            <div className="mt-6">
+              <h2 className="text-xl font-semibold text-gray-900 mb-2">Ochrona danych uczniów (RODO)</h2>
+              <p className="text-gray-700 mb-2">Dane uczniów to dane wrażliwe. Aplikacja MUSI spełniać następujące wymagania:</p>
+              <ul className="list-disc list-inside space-y-1 text-gray-800">
+                <li><strong>Szyfrowanie end‑to‑end</strong>: cała komunikacja i przechowywanie danych są zabezpieczone kryptograficznie E2E.</li>
+                <li><strong>Serwery w UE</strong>: dane są przetwarzane i przechowywane wyłącznie na serwerach zlokalizowanych w Unii Europejskiej (np. OVH Polska, Google Cloud region Warszawa).</li>
+                <li><strong>Prawo do usunięcia</strong>: na żądanie rodzica lub nauczyciela dane są niezwłocznie usuwane (wraz z kopiami zapasowymi zgodnie z polityką retencji).</li>
+                <li><strong>Umowy powierzenia</strong>: przed uruchomieniem w placówce podpisywane są umowy powierzenia przetwarzania danych z administratorem danych szkoły.</li>
+              </ul>
+              <p className="text-gray-700 text-sm mt-2">Szczegółowe procedury (retencja, dostęp, incydenty) określone są w dokumentacji bezpieczeństwa i politykach placówki.</p>
+            </div>
             <p className="text-gray-700 text-sm">
               Więcej informacji i wytycznych dotyczących ochrony danych osobowych i odpowiedzialności oceniającej może określać statut szkoły oraz wewnętrzne procedury.
             </p>
