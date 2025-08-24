@@ -20,6 +20,7 @@ import {
   AlertCircle,
   XCircle,
 } from "lucide-react";
+import { encryptJsonWithPassphrase, decryptJsonWithPassphrase } from "@/lib/crypto";
 
 interface QuestionResult {
   questionNumber: number;
@@ -87,6 +88,9 @@ const AIAssistedGrading = () => {
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [editingIndex, setEditingIndex] = useState<number | null>(null);
   const [editForm, setEditForm] = useState<{ name: string; surname: string; journal: string }>({ name: "", surname: "", journal: "" });
+  const [nameMapUnlocked, setNameMapUnlocked] = useState(false);
+  const [nameMapPass, setNameMapPass] = useState("");
+  const [journalToName, setJournalToName] = useState<Record<string, { name: string; surname: string }>>({});
   const { toast } = useToast();
 
   const validateFile = (
@@ -168,6 +172,25 @@ const AIAssistedGrading = () => {
         }
       }
     }
+  };
+
+  const LOCAL_KEY = "ai_grading_name_map_v1";
+  const tryLoadLocalNameMap = async (pass: string) => {
+    try {
+      const blob = localStorage.getItem(LOCAL_KEY);
+      if (!blob) { setJournalToName({}); setNameMapUnlocked(true); return; }
+      const data = await decryptJsonWithPassphrase<Record<string, { name: string; surname: string }>>(blob, pass);
+      setJournalToName(data || {});
+      setNameMapUnlocked(true);
+    } catch {
+      setNameMapUnlocked(false);
+      throw new Error("Nieprawidłowe hasło lub uszkodzony plik mapy.");
+    }
+  };
+
+  const saveLocalNameMap = async (pass: string) => {
+    const blob = await encryptJsonWithPassphrase(journalToName, pass);
+    localStorage.setItem(LOCAL_KEY, blob);
   };
 
   const extractStudentIdentifier = (filename: string): string => {
@@ -347,17 +370,19 @@ const AIAssistedGrading = () => {
       if (studentIdentifierType === "journal") {
         const journalMatch = fileBaseName.match(/(\d+)/);
         const journalNumber = journalMatch ? journalMatch[1] : String(i + 1);
+        const mapped = journalToName[journalNumber];
         student = {
-          name: studentFile.recognizedName || "[OCR]",
-          surname: studentFile.recognizedSurname || `Uczeń nr ${journalNumber}`,
+          name: mapped?.name || studentFile.recognizedName || "[OCR]",
+          surname: mapped?.surname || studentFile.recognizedSurname || `Uczeń nr ${journalNumber}`,
           journalNumber: studentFile.recognizedJournal || journalNumber,
         };
       } else {
         const journalMatch = fileBaseName.match(/(\d+)/);
         const journalNumber = journalMatch ? journalMatch[1] : String(i + 1);
+        const mapped = journalToName[journalNumber];
         student = {
-          name: studentFile.recognizedName || "[OCR]",
-          surname: studentFile.recognizedSurname || `Uczeń nr ${journalNumber}`,
+          name: mapped?.name || studentFile.recognizedName || "[OCR]",
+          surname: mapped?.surname || studentFile.recognizedSurname || `Uczeń nr ${journalNumber}`,
           journalNumber: studentFile.recognizedJournal || journalNumber,
         };
       }
@@ -484,6 +509,74 @@ const AIAssistedGrading = () => {
           </CardHeader>
         </Card>
 
+        <Card className="mb-6">
+          <CardHeader>
+            <CardTitle>Mapa nazw lokalnie (opcjonalnie)</CardTitle>
+            <CardDescription>
+              Przypisz lokalnie imię i nazwisko do numeru z dziennika. Mapa jest szyfrowana hasłem i NIGDY nie trafia na serwer.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            {!nameMapUnlocked ? (
+              <div className="grid grid-cols-1 md:grid-cols-4 gap-3 items-end">
+                <div className="md:col-span-2">
+                  <Label className="text-[10px] uppercase tracking-wide">Hasło do mapy (utwórz lub podaj)</Label>
+                  <Input type="password" value={nameMapPass} onChange={(e) => setNameMapPass(e.target.value)} placeholder="Hasło" />
+                </div>
+                <div className="flex gap-2">
+                  <Button onClick={async () => { try { await tryLoadLocalNameMap(nameMapPass); } catch (e: any) { alert(e?.message || "Błąd"); } }}>
+                    Odblokuj / Utwórz
+                  </Button>
+                </div>
+                <p className="text-xs text-gray-600 md:col-span-4">Dane są przechowywane wyłącznie w tej przeglądarce i szyfrowane Twoim hasłem.</p>
+              </div>
+            ) : (
+              <div className="space-y-3">
+                <div className="grid grid-cols-1 md:grid-cols-5 gap-2 items-end">
+                  <div>
+                    <Label className="text-[10px] uppercase tracking-wide">Nr z dziennika</Label>
+                    <Input id="map-journal" placeholder="np. 12" />
+                  </div>
+                  <div>
+                    <Label className="text-[10px] uppercase tracking-wide">Imię</Label>
+                    <Input id="map-name" placeholder="Imię" />
+                  </div>
+                  <div>
+                    <Label className="text-[10px] uppercase tracking-wide">Nazwisko</Label>
+                    <Input id="map-surname" placeholder="Nazwisko" />
+                  </div>
+                  <div className="flex gap-2">
+                    <Button size="sm" onClick={() => {
+                      const j = (document.getElementById("map-journal") as HTMLInputElement)?.value.trim();
+                      const n = (document.getElementById("map-name") as HTMLInputElement)?.value.trim();
+                      const s = (document.getElementById("map-surname") as HTMLInputElement)?.value.trim();
+                      if (!j) { alert("Podaj numer z dziennika"); return; }
+                      setJournalToName(prev => ({ ...prev, [j]: { name: n || "", surname: s || "" } }));
+                    }}>Dodaj/aktualizuj</Button>
+                    <Button size="sm" variant="outline" onClick={() => setJournalToName({})}>Wyczyść mapę</Button>
+                  </div>
+                  <div className="flex gap-2">
+                    <Button size="sm" variant="secondary" onClick={async () => { await saveLocalNameMap(nameMapPass); alert("Zapisano mapę lokalnie (zaszyfrowaną)"); }}>Zapisz lokalnie</Button>
+                    <Button size="sm" variant="outline" onClick={() => { setNameMapUnlocked(false); setNameMapPass(""); }}>Zablokuj</Button>
+                  </div>
+                </div>
+                {Object.keys(journalToName).length > 0 && (
+                  <div className="text-xs text-gray-700">
+                    <p className="font-medium mb-1">Zdefiniowane przypisania:</p>
+                    <div className="max-h-40 overflow-auto border rounded">
+                      {Object.entries(journalToName).map(([j, v]) => (
+                        <div key={j} className="flex justify-between border-b px-2 py-1">
+                          <span>Nr {j}</span>
+                          <span>{v.name} {v.surname}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+          </CardContent>
+        </Card>
         <Card className="mb-6">
           <CardHeader>
             <CardTitle>Identyfikacja uczniów</CardTitle>
