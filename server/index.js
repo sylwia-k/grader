@@ -2,7 +2,6 @@ import express from "express";
 import cors from "cors";
 import multer from "multer";
 import Papa from "papaparse";
-import pdfParse from "pdf-parse";
 import visionPkg from "@google-cloud/vision";
 const { v2: vision } = visionPkg;
 import OpenAI from "openai";
@@ -10,6 +9,11 @@ import OpenAI from "openai";
 const app = express();
 app.use(cors());
 app.use(express.json({ limit: "10mb" }));
+// Health check endpoint
+app.get("/health", (req, res) => {
+  return res.json({ status: "ok" });
+});
+
 
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024 } });
 
@@ -188,8 +192,13 @@ app.post("/api/import/results", upload.single("file"), async (req, res) => {
     if (mime.includes("csv") || mime.includes("text")) {
       text = req.file.buffer.toString("utf-8");
     } else if (mime.includes("pdf")) {
-      const parsed = await pdfParse(req.file.buffer);
-      text = parsed.text || "";
+      try {
+        const mod = await import("pdf-parse");
+        const parsed = await mod.default(req.file.buffer);
+        text = parsed.text || "";
+      } catch (e) {
+        return res.status(503).json({ error: "Parser PDF niedostępny w tej konfiguracji serwera.", details: String(e?.message || e) });
+      }
     } else {
       return res.status(400).json({ error: "Nieobsługiwany format. Użyj CSV lub PDF." });
     }
