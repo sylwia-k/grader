@@ -52,7 +52,6 @@ interface GradingThresholds {
   niedostateczny: number;
 }
 
-type StudentIdentifierType = "journal" | "name" | "both";
 type AIModelType = "agent";
 
 interface StudentFile {
@@ -71,8 +70,6 @@ const AIAssistedGrading = () => {
   const [testScans, setTestScans] = useState<StudentFile[]>([]);
   const [answerKeyError, setAnswerKeyError] = useState<string | null>(null);
   const [testScansError, setTestScansError] = useState<string | null>(null);
-  const [studentIdentifierType, setStudentIdentifierType] =
-    useState<StudentIdentifierType>("both");
   const [selectedAIModel, setSelectedAIModel] =
     useState<AIModelType>("agent");
   const [thresholds, setThresholds] = useState<GradingThresholds>({
@@ -367,25 +364,14 @@ const AIAssistedGrading = () => {
       let student: { name: string; surname: string; journalNumber: string };
       const fileBaseName = studentFile.file.name.replace(/\.[^/.]+$/, "");
 
-      if (studentIdentifierType === "journal") {
-        const journalMatch = fileBaseName.match(/(\d+)/);
-        const journalNumber = journalMatch ? journalMatch[1] : String(i + 1);
-        const mapped = journalToName[journalNumber];
-        student = {
-          name: mapped?.name || studentFile.recognizedName || "[OCR]",
-          surname: mapped?.surname || studentFile.recognizedSurname || `Uczeń nr ${journalNumber}`,
-          journalNumber: studentFile.recognizedJournal || journalNumber,
-        };
-      } else {
-        const journalMatch = fileBaseName.match(/(\d+)/);
-        const journalNumber = journalMatch ? journalMatch[1] : String(i + 1);
-        const mapped = journalToName[journalNumber];
-        student = {
-          name: mapped?.name || studentFile.recognizedName || "[OCR]",
-          surname: mapped?.surname || studentFile.recognizedSurname || `Uczeń nr ${journalNumber}`,
-          journalNumber: studentFile.recognizedJournal || journalNumber,
-        };
-      }
+      const journalMatch = fileBaseName.match(/(\d+)/);
+      const journalNumber = journalMatch ? journalMatch[1] : String(i + 1);
+      const mapped = journalToName[journalNumber];
+      student = {
+        name: mapped?.name || studentFile.recognizedName || "[OCR]",
+        surname: mapped?.surname || studentFile.recognizedSurname || `Uczeń nr ${journalNumber}`,
+        journalNumber: studentFile.recognizedJournal || journalNumber,
+      };
 
       await new Promise((resolve) => setTimeout(resolve, 200));
       setProcessingStatus(`Odczytywanie odpowiedzi ucznia ${student.name} ${student.surname}...`);
