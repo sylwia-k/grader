@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import {
   Card,
   CardContent,
@@ -352,22 +352,12 @@ const AIAssistedGrading = () => {
           surname: studentFile.recognizedSurname || `Uczeń nr ${journalNumber}`,
           journalNumber: studentFile.recognizedJournal || journalNumber,
         };
-      } else if (studentIdentifierType === "name") {
-        const cleanName = fileBaseName.replace(/[_-]/g, " ").trim();
-        const nameParts = cleanName.split(" ");
-        student = {
-          name: studentFile.recognizedName || nameParts[0] || `Uczeń${i + 1}`,
-          surname: studentFile.recognizedSurname || nameParts[1] || `Nazwisko${i + 1}`,
-          journalNumber: studentFile.recognizedJournal || String(i + 1),
-        };
       } else {
         const journalMatch = fileBaseName.match(/(\d+)/);
         const journalNumber = journalMatch ? journalMatch[1] : String(i + 1);
-        const cleanName = fileBaseName.replace(/\d+/g, "").replace(/[_-]/g, " ").trim();
-        const nameParts = cleanName.split(" ").filter((part) => part.length > 0);
         student = {
-          name: studentFile.recognizedName || nameParts[0] || `Uczeń${i + 1}`,
-          surname: studentFile.recognizedSurname || nameParts[1] || `Nazwisko${i + 1}`,
+          name: studentFile.recognizedName || "[OCR]",
+          surname: studentFile.recognizedSurname || `Uczeń nr ${journalNumber}`,
           journalNumber: studentFile.recognizedJournal || journalNumber,
         };
       }
@@ -475,6 +465,16 @@ const AIAssistedGrading = () => {
           </p>
         </div>
 
+        <div className="max-w-4xl mx-auto">
+          <div className="bg-yellow-50 text-yellow-900 border border-yellow-200 rounded p-3 text-sm mb-4 flex items-start gap-2">
+            <AlertCircle className="h-4 w-4 mt-0.5 flex-shrink-0" />
+            <div>
+              <p><strong>Uwaga:</strong> W Polsce nauczyciel ponosi odpowiedzialność prawną za wystawione oceny. AI jest narzędziem wspierającym i nie zastępuje decyzji nauczyciela.</p>
+              <p className="mt-1">„AI generuje propozycję oceny, decyzję ostateczną podejmuje nauczyciel”. Zobacz <Link to="/regulamin" className="text-blue-700 hover:underline">regulamin</Link>.</p>
+            </div>
+          </div>
+        </div>
+
         <Card className="mb-6">
           <CardHeader>
             <CardTitle>Agent AI</CardTitle>
@@ -486,27 +486,11 @@ const AIAssistedGrading = () => {
 
         <Card className="mb-6">
           <CardHeader>
-            <CardTitle>Typ identyfikatora ucznia</CardTitle>
+            <CardTitle>Identyfikacja uczniów</CardTitle>
             <CardDescription>
-              Wybierz, jakiego typu informacje o uczniu agent ma szukać w górnych rogach testów
+              Identyfikacja odbywa się wyłącznie na podstawie numeru z dziennika. Upewnij się, że numer jest czytelny na skanie lub w nazwie pliku.
             </CardDescription>
           </CardHeader>
-          <CardContent>
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              <div className="flex items-center space-x-2">
-                <input type="radio" id="journal" name="studentIdentifier" value="journal" checked={studentIdentifierType === "journal"} onChange={(e) => setStudentIdentifierType(e.target.value as StudentIdentifierType)} className="w-4 h-4 text-blue-600" />
-                <Label htmlFor="journal" className="cursor-pointer">Tylko numer z dziennika</Label>
-              </div>
-              <div className="flex items-center space-x-2">
-                <input type="radio" id="name" name="studentIdentifier" value="name" checked={studentIdentifierType === "name"} onChange={(e) => setStudentIdentifierType(e.target.value as StudentIdentifierType)} className="w-4 h-4 text-blue-600" />
-                <Label htmlFor="name" className="cursor-pointer">Tylko imię i nazwisko</Label>
-              </div>
-              <div className="flex items-center space-x-2">
-                <input type="radio" id="both" name="studentIdentifier" value="both" checked={studentIdentifierType === "both"} onChange={(e) => setStudentIdentifierType(e.target.value as StudentIdentifierType)} className="w-4 h-4 text-blue-600" />
-                <Label htmlFor="both" className="cursor-pointer">Imię, nazwisko i numer z dziennika</Label>
-              </div>
-            </div>
-          </CardContent>
         </Card>
 
         <div className="grid md:grid-cols-2 gap-6">
@@ -550,7 +534,7 @@ const AIAssistedGrading = () => {
                 Skany Testów
               </CardTitle>
               <CardDescription>
-                Załaduj skany prac uczniów. Każdy plik będzie traktowany jako osobny uczeń. Możesz dodać wiele plików naraz. Każdy test musi zawierać czytelnie napisane informacje o uczniu w górnych rogach (zgodnie z wybranym typem identyfikatora).
+                Załaduj skany prac uczniów. Każdy plik będzie traktowany jako osobny uczeń. Możesz dodać wiele plików naraz. Każdy test musi zawierać czytelnie wpisany numer z dziennika w nagłówku. Nazwa pliku może zawierać numer (np. 12_smith.jpg).
               </CardDescription>
             </CardHeader>
             <CardContent>
